@@ -6,14 +6,16 @@ import lombok.Data;
 public class CardDto {
 
     private String name;
+    private String rarity;
+    private String type;
     private Long id;
     private Integer level;
     private Integer maxLevel;
     private Integer evolutionLevel;
     private Integer maxEvolutionLevel;
-    private String rarity;
     private Integer count;
     private Integer elixirCost;
+
     private IconUrls iconUrls;
 
     @Data

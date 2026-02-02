@@ -1,6 +1,7 @@
 package com.deftgray.clashproxy.service;
 
 import com.deftgray.clashproxy.dto.CardDto;
+import com.deftgray.clashproxy.dto.CardListResponse;
 import com.deftgray.clashproxy.dto.ClashApıResponse;
 import com.deftgray.clashproxy.model.Card;
 
@@ -14,7 +15,10 @@ import org.springframework.web.client.RestTemplate;
 import java.util.ArrayList;
 import java.util.List;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Service
+@Slf4j
 public class ClashService {
 
     private final RestTemplate restTemplate = new RestTemplate();
@@ -51,13 +55,88 @@ public class ClashService {
         }
     }
 
+    private List<Card> cachedCards;
+
+    public List<Card> getAllCards() {
+        if (cachedCards != null && !cachedCards.isEmpty()) {
+            return cachedCards;
+        }
+
+        String url = "https://api.clashroyale.com/v1/cards";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(this.apiToken);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<CardListResponse> response = restTemplate.exchange(url, HttpMethod.GET, entity,
+                    CardListResponse.class);
+
+            CardListResponse body = response.getBody();
+            log.info("Clash API /cards response: {}", body);
+
+            if (body == null || body.getItems() == null) {
+                log.warn("Clash API /cards returned null or empty list");
+                return new ArrayList<>();
+            }
+
+            log.info("Fetched {} cards from Clash API", body.getItems().size());
+
+            List<Card> cards = body.getItems().stream()
+                    .map(this::mapToCard)
+                    .toList();
+
+            this.cachedCards = cards;
+            return cards;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+
     private Card mapToCard(CardDto dto) {
         Card card = new Card();
         card.setName(dto.getName());
-        card.setLevel(dto.getLevel());
+
+        // Normalize Level based on Rarity
+        // API returns relative level (1-based index). We convert to Standard Level
+        // (1-15+).
+        Integer rawLevel = dto.getLevel();
+
+        // Handle generic card data where level might be null
+        if (rawLevel == null) {
+            rawLevel = 1; // Default base level if not specified
+        }
+
+        String rarity = dto.getRarity();
+        int normalizedLevel = rawLevel; // Default for Common
+
+        if (rarity != null) {
+            switch (rarity.toLowerCase()) {
+                case "rare":
+                    normalizedLevel = rawLevel + 2;
+                    break;
+                case "epic":
+                    normalizedLevel = rawLevel + 5;
+                    break;
+                case "legendary":
+                    normalizedLevel = rawLevel + 8;
+                    break;
+                case "champion":
+                    normalizedLevel = rawLevel + 10;
+                    break;
+                default:
+                    // Common or unknown, keep rawLevel
+                    break;
+            }
+        }
+        card.setLevel(normalizedLevel);
 
         card.setElixirCost(dto.getElixirCost());
+
         card.setRarity(dto.getRarity());
+        card.setType(dto.getType());
+        card.setId(dto.getId());
 
         // Map Icon URLs
         if (dto.getIconUrls() != null) {

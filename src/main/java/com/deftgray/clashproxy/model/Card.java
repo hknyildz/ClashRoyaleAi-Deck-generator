@@ -14,5 +14,7 @@ public class Card {
     private Boolean isHero;
     private String imageUriHero;
     private String rarity;
+    private String type;
+    private Long id;
 
 }

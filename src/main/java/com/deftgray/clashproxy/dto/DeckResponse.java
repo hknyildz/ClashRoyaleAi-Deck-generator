@@ -13,4 +13,6 @@ public class DeckResponse {
     private boolean valid;
     private String strategy;
     private String tacticMessage;
+    private Double averageElixir;
+    private String deepLink;
 }

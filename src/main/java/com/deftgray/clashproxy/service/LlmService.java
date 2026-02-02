@@ -55,7 +55,7 @@ public class LlmService {
                 "model", modelName,
                 "messages", List.of(
                         Map.of("role", "system", "content",
-                                "You are a Clash Royale expert. Build the best deck (8 cards) from the provided list. Rules: Max 1 Hero/Champion. Max 2 Evolved cards. Return ONLY a JSON object with keys: 'cards' (array of objects with keys: 'name', 'isEvolved' (boolean), 'isHero' (boolean), 'level' (integer)), 'strategy' (string, e.g. 'Cycle', 'Bait', 'Beatdown'), and 'tactic' (string, explanation of how to play). No markdown."),
+                                "You are a Clash Royale expert. Build the best deck (8 cards) from the provided list. Rules: Max 1 Hero/Champion. Max 2 Evolved cards. Return ONLY a JSON object with keys: 'cards' (array of objects with keys: 'name', 'isEvolved' (boolean), 'isHero' (boolean), 'level' (integer)), 'strategy' (string, MUST be one of: 'Beatdown', 'Control', 'Cycle', 'Bait', 'Siege', 'Bridge Spam', 'Split Lane', 'Hybrid'), and 'tactic' (string, explanation of how to play). No markdown."),
                         Map.of("role", "user", "content", prompt)));
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
@@ -79,6 +79,57 @@ public class LlmService {
 
         return "Here is my collection of cards:\n" + cardList
                 + "\n\nPick 8 cards for a balanced deck. Maximize card levels. Ensure valid deck composition.";
+    }
+
+    public com.deftgray.clashproxy.dto.LlmDeckSuggestion generateDeckCompletion(List<SimplifiedCard> collection,
+            List<String> currentDeckNames, String playStyle) {
+        if (apiKey == null || apiKey.isEmpty()) {
+            apiKey = " ";
+            log.warn("Using hardcoded API key (NOT RECOMMENDED for production)");
+        }
+
+        String prompt = createCompletionPrompt(collection, currentDeckNames, playStyle);
+        log.debug("Sending completion prompt to LLM: {}", prompt);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(apiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = Map.of(
+                "model", modelName,
+                "messages", List.of(
+                        Map.of("role", "system", "content",
+                                "You are a Clash Royale expert. Complete the deck to 8 cards using the player's collection. Respect the user's selected playstyle: "
+                                        + playStyle
+                                        + ". Return ONLY a JSON object with keys: 'cards' (array of objects with keys: 'name', 'isEvolved' (boolean), 'isHero' (boolean), 'level' (integer)), 'strategy' (string enum), and 'tactic' (string)."),
+                        Map.of("role", "user", "content", prompt)));
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
+        try {
+            String response = restTemplate.postForObject(openRouterUrl, entity, String.class);
+            log.info("Received response from LLM: {}", response);
+            return parseResponse(response);
+        } catch (Exception e) {
+            log.error("Error calling OpenRouter API", e);
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private String createCompletionPrompt(List<SimplifiedCard> collection, List<String> currentDeckNames,
+            String playStyle) {
+        String cardList = collection.stream()
+                .map(c -> String.format("%s (Lvl: %d, Evo: %s, Hero: %s)", c.getName(), c.getLevel(), c.isEvolved(),
+                        c.isHero()))
+                .collect(Collectors.joining("\n"));
+
+        String alreadySelected = String.join(", ", currentDeckNames);
+
+        return "Here is my collection of cards:\n" + cardList
+                + "\n\nI want to build a '" + playStyle + "' deck."
+                + "\nI have ALREADY selected these cards: " + alreadySelected
+                + "\nPlease pick the remaining cards from my collection to form a complete, competitive 8-card deck. Ensure the final deck includes the cards I selected.";
     }
 
     private com.deftgray.clashproxy.dto.LlmDeckSuggestion parseResponse(String jsonResponse) {
